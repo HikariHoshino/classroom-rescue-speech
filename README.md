@@ -4,6 +4,12 @@ Speech module for a classroom transcript application. This repository contains
 the deliverable module, its regression tests, and a sample recording, not the
 complete classroom rescue application or the inaccessible Gitee repository.
 
+## Project Submission
+
+- [中文项目说明](docs/project-description.md)
+- [Word 项目说明](docs/project-description.docx)
+- [报名表填写指引](SUBMISSION.md)
+
 ## Contents
 
 - `src/speech/`: microphone capture, 16 kHz PCM, WebSocket client, session lifecycle,
