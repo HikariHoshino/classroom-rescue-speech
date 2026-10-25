@@ -14,9 +14,8 @@ from typing import Any, Dict, Iterable, List, Sequence, Set
 MAX_SEGMENTS = 2000
 MAX_SESSION_ID = 128
 
-# 每项正文的硬上限（汉字）。文档目标是三项合计约 100~150 字；
-# 团队选择更详细的版本，这里放宽到约 150~220 字并把硬上限留出余量。
-FIELD_LIMIT = {"missed": 260, "topic": 80, "latest": 180}
+# 每项正文的硬上限（汉字）。只作为模型跑偏时的保护，提示词要求三项合计不超过 110 字。
+FIELD_LIMIT = {"missed": 140, "topic": 24, "latest": 40}
 
 
 class BadRequest(Exception):

@@ -101,6 +101,56 @@ def rescue_extract(request: Dict[str, object]) -> Dict[str, object]:
     }
 
 
+def exam_section_markdown(segments: Sequence[Dict[str, object]]) -> str:
+    """「疑似考点（原文）」小节：由本地关键词函数生成，不交给模型，避免它编造或漏掉。"""
+    lines: List[str] = ["## 疑似考点（原文）", ""]
+    hits = keywords.detect_hits(segments)
+    by_id = {str(segment.get("id")): segment for segment in segments}
+    if hits:
+        for hit in hits[:4]:
+            segment = by_id.get(str(hit.get("segmentId")))
+            if segment is None:
+                continue
+            lines.append(
+                "- [%s] 「%s」%s"
+                % (
+                    mmss(int(segment.get("startMs") or 0)),
+                    hit.get("keyword"),
+                    _clip(str(segment.get("text")), 80),
+                )
+            )
+    else:
+        lines.append("- 本节未命中关键词，请以老师现场说明为准。")
+    return "\n".join(lines)
+
+
+def inject_exam_section(markdown: str, segments: Sequence[Dict[str, object]]) -> str:
+    """把本地生成的考点小节插到「## 待确认内容」之前；模型没给这一节时追加到末尾。"""
+    block = exam_section_markdown(segments)
+    index = markdown.find("## 待确认内容")
+    if index != -1:
+        return markdown[:index].rstrip() + "\n\n" + block + "\n\n" + markdown[index:].lstrip()
+    return markdown.rstrip() + "\n\n" + block + "\n"
+
+
+def finalize_notes(markdown: str, segments: Sequence[Dict[str, object]]) -> str:
+    """模型产出的收尾：补标题、补考点小节、补空的「待确认内容」。"""
+    text = markdown.strip()
+    if not text.startswith("# 课堂笔记"):
+        text = "# 课堂笔记\n\n" + text.lstrip("# ").lstrip()
+
+    text = inject_exam_section(text, segments)
+
+    index = text.find("## 待确认内容")
+    if index != -1:
+        head = text[:index]
+        tail = text[index + len("## 待确认内容") :].strip()
+        if not tail:
+            tail = "- 识别不清或语义不完整的片段未补写，请对照录音确认。"
+        text = head.rstrip() + "\n\n## 待确认内容\n\n" + tail + "\n"
+    return text
+
+
 def notes_markdown(session_id: str, segments: Sequence[Dict[str, object]]) -> str:
     """原文整理版笔记，小节顺序与模型版保持一致。"""
     start_ms = int(segments[0].get("startMs") or 0) if segments else 0

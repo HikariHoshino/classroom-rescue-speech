@@ -139,6 +139,14 @@ class ExtractTest(unittest.TestCase):
         self.assertIn("原文整理", markdown)
         self.assertNotIn("## 作业与任务", markdown)
 
+    def test_finalize_notes_adds_missing_sections(self):
+        raw = "## 课堂主题\n栈\n## 知识要点\n[00:21] 栈是后进先出表。\n## 待确认内容\n"
+        text = extract.finalize_notes(raw, validate.parse_rescue(SAMPLE_REQUEST)["segments"])
+        self.assertTrue(text.startswith("# 课堂笔记"))
+        self.assertIn("## 疑似考点（原文）", text)
+        self.assertIn("「期末」", text)
+        self.assertTrue(text.strip().endswith("请对照录音确认。"))
+
     def test_notes_markdown_adds_task_section(self):
         segments = validate.parse_rescue(
             dict(

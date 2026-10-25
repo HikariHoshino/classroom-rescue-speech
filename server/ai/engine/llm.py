@@ -15,6 +15,7 @@
 
 import json
 import os
+import re
 import socket
 import urllib.error
 import urllib.request
@@ -36,12 +37,21 @@ class LLMFormatError(RuntimeError):
 
 
 def _endpoint(base: str) -> str:
+    """把用户填的 base 补成完整的 chat/completions 地址。
+
+    兼容三种写法：
+        https://open.bigmodel.cn/api/paas/v4      -> +/chat/completions
+        https://api.deepseek.com/v1               -> +/chat/completions
+        https://xxx/v1/chat/completions           -> 原样使用
+        https://api.deepseek.com                  -> +/v1/chat/completions
+    """
     url = (base or "").strip().rstrip("/")
     if not url:
         raise LLMUnavailable("缺少 LLM_BASE_URL")
     if url.endswith("/chat/completions"):
         return url
-    if url.endswith("/v1"):
+    # 已经带了版本段（/v1、/v4、/api/paas/v4 等），只需补最后一段
+    if re.search(r"/(?:api/[a-z]+/)?v\d+$", url, flags=re.IGNORECASE):
         return url + "/chat/completions"
     return url + "/v1/chat/completions"
 
@@ -85,6 +95,7 @@ def chat_json(system_prompt: str, user_prompt: str, timeout: float = None) -> Di
     payload = {
         "model": model,
         "temperature": 0.2,
+        "max_tokens": int(os.environ.get("LLM_MAX_TOKENS", "400")),
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -143,6 +154,7 @@ def chat_text(system_prompt: str, user_prompt: str, timeout: float = None) -> st
     payload = {
         "model": model,
         "temperature": 0.3,
+        "max_tokens": int(os.environ.get("LLM_MAX_TOKENS_NOTES", "1200")),
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},

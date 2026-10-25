@@ -216,7 +216,10 @@ class EngineHandler(BaseHTTPRequestHandler):
                 markdown = llm.chat_text(
                     prompts.NOTES_SYSTEM,
                     prompts.build_notes_prompt(request["sessionId"], request["segments"]),
+                    timeout=float(os.environ.get("LLM_TIMEOUT_NOTES_SEC", "18")),
                 )
+                # 考点小节由本地关键词函数生成，不交给模型，避免编造或漏标
+                markdown = extract.finalize_notes(markdown, request["segments"])
                 mode = "ai"
             except (llm.LLMTimeout, llm.LLMUnavailable, llm.LLMFormatError) as exc:
                 note = "fallback:%s" % exc.__class__.__name__
