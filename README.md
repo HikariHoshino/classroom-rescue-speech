@@ -45,6 +45,19 @@ npm run test    # 语音模块与 ASR 路由的 8 项回归/集成测试
 npm run build   # 前端构建检查（tsc client + vite build）
 ```
 
+### AI 引擎（回溯 / 笔记，3号）
+
+只用 Python 标准库，**不需要 pip install**；本机验证 Python 3.13.9。
+
+```bash
+python server/ai/engine/server.py --port 8000          # 调用真实模型
+python server/ai/engine/server.py --port 8000 --mock   # 不调模型，本地数据演练界面
+python -m unittest discover -s server/ai/engine/tests  # 27 项引擎自测
+```
+
+引擎不启动也能用：Node 适配层会自动降级为本地原文整理（`resultMode: "extract"`），
+页面不会白屏，只在结果上注明「原文整理（未使用 AI）」。
+
 ## 目录与负责人（只改自己负责的文件）
 
 | 路径 | 负责人 | 用途 |
@@ -72,4 +85,9 @@ npm run build   # 前端构建检查（tsc client + vite build）
 - **实时模式**需在 `.env` 配置 `ASR_API_KEY`（及可选的 `ASR_APP_ID`）；未配置时开始会明确报错
   "后端未配置识别服务密钥"，不会伪装成正常记录
 - 真实识别准确率、真实麦克风浏览器测试、5号最终录音 **尚未验证**
-- `/api/rescue` 与 `/api/notes` 仍返回 `resultMode: "extract"` 的**原文整理占位结果**，**未调用真实模型**
+- **AI（3号）已接入**：`server/ai/index.ts` 适配层 → `server/ai/engine/` Python 引擎，
+  三级降级（模型 → 引擎内原文整理 → Node 本地原文整理），任意一级失败都能出结果
+- 已实测：引擎未启动时 `/api/rescue` 返回 `extract`；引擎 `--mock` 启动时返回 `ai`
+- **真实模型（glm-4-flash）尚未在本机实测**：需要 `.env` 配置 `LLM_BASE_URL/LLM_API_KEY/LLM_MODEL`
+- `src/components/NotesSectionsPreview.tsx`（`/api/notes/sections` 分节预览）由 3号 提供，
+  **尚未接入页面**，等 4号 按组件内注释接入 NotesPanel

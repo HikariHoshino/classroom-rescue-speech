@@ -13,24 +13,14 @@
 //        />
 //   3. props 里的 sections 来自 src/api.ts 的 postNoteSections(...).sections
 //
-// 类型说明：shared/types.ts 里的 NoteSection 由 1号 补；在那之前先用下面的
-// PreviewSection（字段完全一致），补好后把 import 换掉、删掉本地定义即可。
+// 类型说明：NoteSection 已由 1号 并入 shared/types.ts，这里直接复用公共类型。
 
 import { useState } from "react";
-
-export interface PreviewSection {
-  id: string;
-  title: string;
-  points: string[];
-  startMs: number;
-  segmentIds: string[];
-  examStars: 0 | 1 | 2 | 3;
-  examBasis: string;
-}
+import type { NoteSection } from "../../shared/types";
 
 export interface NotesSectionsPreviewProps {
   /** 来自 POST /api/notes/sections 的 sections；null 表示还没生成 */
-  sections: PreviewSection[] | null;
+  sections: NoteSection[] | null;
   loading?: boolean;
   /** 点击「定位原文」时回调，传第一个片段 id */
   onLocate?: (segmentId: string) => void;

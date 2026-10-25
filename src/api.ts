@@ -3,6 +3,7 @@
 // 所有请求校验响应 sessionId；新建课堂后由调用方取消并丢弃旧课堂响应。
 import type {
   ApiError,
+  NoteSectionsResponse,
   NotesResponse,
   RescueRequest,
   RescueResponse,
@@ -103,6 +104,20 @@ export function postNotes(
 ): Promise<NotesResponse> {
   return postJson<{ sessionId: string; segments: Segment[] }, NotesResponse>(
     "/api/notes",
+    { sessionId, segments },
+    sessionId,
+    externalSignal,
+  );
+}
+
+/** 笔记分节：POST /api/notes/sections，供 4号 的 NotesSectionsPreview 接入 */
+export function postNoteSections(
+  sessionId: string,
+  segments: Segment[],
+  externalSignal?: AbortSignal,
+): Promise<NoteSectionsResponse> {
+  return postJson<{ sessionId: string; segments: Segment[] }, NoteSectionsResponse>(
+    "/api/notes/sections",
     { sessionId, segments },
     sessionId,
     externalSignal,

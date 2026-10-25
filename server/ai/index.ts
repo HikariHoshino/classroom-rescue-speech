@@ -1,4 +1,4 @@
-// AI 路由（唯一责任人：3号）
+﻿// AI 路由（唯一责任人：3号）
 // 结构：Express 适配层（本文件） ——HTTP——▶ Python 引擎 server/ai/engine/server.py
 //
 // 为什么不是全部写在 Node 里：
@@ -14,6 +14,8 @@ import type { Express, Request, Response } from "express";
 import { extractNotes, extractRescue } from "./extract.js";
 import type {
   ApiError,
+  NoteSection,
+  NoteSectionsResponse,
   NotesResponse,
   RescueRequest,
   RescueResponse,
@@ -27,26 +29,6 @@ const ENGINE_TIMEOUT_MS = (() => {
 })();
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; code: string; message: string };
-
-/**
- * 笔记小节：与 1号 约定后应迁入 shared/types.ts。
- * examStars 只表示「这个知识点在历年 408 真题里出现得多不多」，不代表今年一定考。
- */
-export interface NoteSectionDraft {
-  id: string;
-  title: string;
-  points: string[];
-  startMs: number;
-  segmentIds: string[];
-  examStars: 0 | 1 | 2 | 3;
-  examBasis: string;
-}
-
-export interface SectionsResponse {
-  sessionId: string;
-  resultMode: "ai" | "extract";
-  sections: NoteSectionDraft[];
-}
 
 function fail(res: Response, status: number, code: string, message: string): void {
   const body: ApiError = { error: { code, message } };
@@ -184,8 +166,8 @@ function isNotesResponse(value: unknown): value is NotesResponse {
   );
 }
 
-function isSectionsResponse(value: unknown): value is SectionsResponse {
-  const body = value as SectionsResponse | null;
+function isSectionsResponse(value: unknown): value is NoteSectionsResponse {
+  const body = value as NoteSectionsResponse | null;
   return (
     !!body &&
     typeof body.sessionId === "string" &&
@@ -204,7 +186,7 @@ function isSectionsResponse(value: unknown): value is SectionsResponse {
 }
 
 /** 引擎不可用时的最简分节：整节课一段，不假装有知识点星级。 */
-function fallbackSections(segments: Segment[]): NoteSectionDraft[] {
+function fallbackSections(segments: Segment[]): NoteSection[] {
   return [
     {
       id: "sec-01",
@@ -303,8 +285,8 @@ export function registerAiRoutes(app: Express): void {
         }
         const { sessionId, segments } = parsed.value;
 
-        const fromEngine = await callEngine<SectionsResponse>("/sections", { sessionId, segments });
-        const payload: SectionsResponse =
+        const fromEngine = await callEngine<NoteSectionsResponse>("/sections", { sessionId, segments });
+        const payload: NoteSectionsResponse =
           fromEngine && isSectionsResponse(fromEngine)
             ? { ...fromEngine, sessionId }
             : { sessionId, resultMode: "extract", sections: fallbackSections(segments) };

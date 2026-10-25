@@ -61,6 +61,26 @@ export interface ExamHit {
   keyword: string;
 }
 
+/**
+ * 笔记分节（3号 /api/notes/sections 的返回单元）。
+ * examStars 只表示该知识点在历年 408 真题里出现的频次，不代表今年一定考。
+ */
+export interface NoteSection {
+  id: string;
+  title: string;
+  points: string[];
+  startMs: number;
+  segmentIds: string[];
+  examStars: 0 | 1 | 2 | 3;
+  examBasis: string;
+}
+
+export interface NoteSectionsResponse {
+  sessionId: string;
+  resultMode: "ai" | "extract";
+  sections: NoteSection[];
+}
+
 export interface ApiError {
   error: { code: string; message: string };
 }
