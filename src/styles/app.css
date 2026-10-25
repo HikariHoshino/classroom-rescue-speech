@@ -67,9 +67,16 @@
 @media(min-width:761px){.radar-scroll{max-height:clamp(150px,calc(100dvh - 725px),400px)}}
 
 /* ===== 1号整合补充（骨架契约所需，ljx 样式之外的少量类） ===== */
+/* ljx 样式中 .app-shell 存在两套定义（页面根 / 内部滚动区），此处统一为页面根，避免整页被裁切 */
+.app-shell { height: auto !important; overflow: visible !important; padding-bottom: 72px; }
 .app-error-banner {
   background: #fdecea; color: #b71c1c; padding: 8px 14px;
   border-radius: 8px; margin: 8px auto; max-width: 1120px;
+}
+.app-notice-banner {
+  background: #f3f4ec; color: #6f7466; border: 1px solid var(--border);
+  padding: 8px 14px; border-radius: 8px; margin: 8px auto;
+  max-width: 1120px; font-size: 12px;
 }
 .mode-option { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted, #8a8c83); }
 .notes-idle { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }

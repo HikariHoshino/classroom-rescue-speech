@@ -347,7 +347,12 @@ export default function App() {
         onNewSession={handleNewSession}
       />
       {statusMessage && (
-        <p className="app-error-banner" role="status">
+        <p
+          className={
+            status === "error" ? "app-error-banner" : "app-notice-banner"
+          }
+          role="status"
+        >
           {statusMessage}
         </p>
       )}
