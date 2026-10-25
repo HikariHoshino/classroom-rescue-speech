@@ -333,7 +333,7 @@ export default function App() {
   const canGenerateNotes = status === "stopped" && hasText;
 
   return (
-    <div className="app">
+    <div className="app-shell">
       <TopBar
         mode={mode}
         status={status}
@@ -351,12 +351,18 @@ export default function App() {
           {statusMessage}
         </p>
       )}
-      <main className="app-main">
-        <TranscriptPanel
-          segments={segments}
-          highlightSegmentId={highlightSegmentId}
-          status={status}
-        />
+      <main>
+        <div className="workspace-grid">
+          <TranscriptPanel
+            segments={segments}
+            highlightSegmentId={highlightSegmentId}
+            status={status}
+            onStart={canStart ? () => void handleStart() : undefined}
+          />
+          <div className="radar-column">
+            <ExamRadar hits={examHits} onLocate={handleLocate} />
+          </div>
+        </div>
         <RescuePanel
           canRescue={canRescue}
           loading={rescue.loading}
@@ -364,10 +370,9 @@ export default function App() {
           resultMode={rescue.resultMode}
           error={rescue.error}
           windowRange={rescue.windowRange}
-          onRescue={doRescue}
-          onRetry={doRescue}
+          onRescue={() => void doRescue()}
+          onRetry={() => void doRescue()}
         />
-        <ExamRadar hits={examHits} onLocate={handleLocate} />
         <NotesPanel
           canGenerate={canGenerateNotes}
           loading={notes.loading}
@@ -375,8 +380,8 @@ export default function App() {
           resultMode={notes.resultMode}
           recordedAtMs={notes.recordedAtMs}
           error={notes.error}
-          onGenerate={doNotes}
-          onRetry={doNotes}
+          onGenerate={() => void doNotes()}
+          onRetry={() => void doNotes()}
         />
       </main>
     </div>

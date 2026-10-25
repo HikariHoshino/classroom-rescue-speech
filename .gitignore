@@ -7,3 +7,5 @@ Thumbs.db
 # 录音缓存
 recordings/
 *.tmp
+
+.vite/
