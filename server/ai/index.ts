@@ -28,6 +28,26 @@ const ENGINE_TIMEOUT_MS = (() => {
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; code: string; message: string };
 
+/**
+ * 笔记小节：与 1号 约定后应迁入 shared/types.ts。
+ * examStars 只表示「这个知识点在历年 408 真题里出现得多不多」，不代表今年一定考。
+ */
+export interface NoteSectionDraft {
+  id: string;
+  title: string;
+  points: string[];
+  startMs: number;
+  segmentIds: string[];
+  examStars: 0 | 1 | 2 | 3;
+  examBasis: string;
+}
+
+export interface SectionsResponse {
+  sessionId: string;
+  resultMode: "ai" | "extract";
+  sections: NoteSectionDraft[];
+}
+
 function fail(res: Response, status: number, code: string, message: string): void {
   const body: ApiError = { error: { code, message } };
   res.status(status).json(body);
@@ -164,6 +184,40 @@ function isNotesResponse(value: unknown): value is NotesResponse {
   );
 }
 
+function isSectionsResponse(value: unknown): value is SectionsResponse {
+  const body = value as SectionsResponse | null;
+  return (
+    !!body &&
+    typeof body.sessionId === "string" &&
+    (body.resultMode === "ai" || body.resultMode === "extract") &&
+    Array.isArray(body.sections) &&
+    body.sections.every(
+      (item) =>
+        !!item &&
+        typeof item.id === "string" &&
+        typeof item.title === "string" &&
+        Array.isArray(item.points) &&
+        Array.isArray(item.segmentIds) &&
+        typeof item.examStars === "number",
+    )
+  );
+}
+
+/** 引擎不可用时的最简分节：整节课一段，不假装有知识点星级。 */
+function fallbackSections(segments: Segment[]): NoteSectionDraft[] {
+  return [
+    {
+      id: "sec-01",
+      title: "课堂内容",
+      points: segments.map((segment) => segment.text),
+      startMs: segments[0]?.startMs ?? 0,
+      segmentIds: segments.map((segment) => segment.id),
+      examStars: 0,
+      examBasis: "知识库暂不可用",
+    },
+  ];
+}
+
 function guard(res: Response, started: number, route: string, error: unknown): void {
   const elapsed = Date.now() - started;
   console.error(`[ai] ${route} 失败 ${elapsed}ms:`, error);
@@ -233,6 +287,34 @@ export function registerAiRoutes(app: Express): void {
         res.json(payload);
       } catch (error) {
         guard(res, started, "/api/notes", error);
+      }
+    })();
+  });
+
+  // 笔记分节：给 4号 的「按知识点勾选 → 存进笔记本」用，与 /api/notes 并存、互不改动
+  app.post("/api/notes/sections", (req: Request, res: Response) => {
+    const started = Date.now();
+    void (async () => {
+      try {
+        const parsed = parseNotes(req.body);
+        if (!parsed.ok) {
+          fail(res, 400, parsed.code, parsed.message);
+          return;
+        }
+        const { sessionId, segments } = parsed.value;
+
+        const fromEngine = await callEngine<SectionsResponse>("/sections", { sessionId, segments });
+        const payload: SectionsResponse =
+          fromEngine && isSectionsResponse(fromEngine)
+            ? { ...fromEngine, sessionId }
+            : { sessionId, resultMode: "extract", sections: fallbackSections(segments) };
+
+        console.log(
+          `[ai] /api/notes/sections ${Date.now() - started}ms mode=${payload.resultMode} sections=${payload.sections.length}`,
+        );
+        res.json(payload);
+      } catch (error) {
+        guard(res, started, "/api/notes/sections", error);
       }
     })();
   });

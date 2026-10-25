@@ -27,13 +27,16 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 ENGINE_DIR = Path(__file__).resolve().parent
+AI_DIR = ENGINE_DIR.parent
 REPO_ROOT = ENGINE_DIR.parents[2]
-if str(ENGINE_DIR) not in sys.path:
-    sys.path.insert(0, str(ENGINE_DIR))
+for _path in (str(ENGINE_DIR), str(AI_DIR)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 import extract  # noqa: E402
 import llm  # noqa: E402
 import prompts  # noqa: E402
+import sections  # noqa: E402
 import validate  # noqa: E402
 
 MAX_BODY_BYTES = 2 * 1024 * 1024
@@ -133,6 +136,10 @@ class EngineHandler(BaseHTTPRequestHandler):
         if path == "/health":
             self._send(200, {"ok": True, "engine": "rescue-ai", "mock": _is_mock()})
             return
+        if path == "/weights":
+            # 考点权重库摘要：前端「知识库」面板直接展示，含来源与免责说明
+            self._send(200, sections.weights_summary())
+            return
         self._error(404, "NOT_FOUND", "未知路径")
 
     def do_POST(self) -> None:
@@ -141,6 +148,8 @@ class EngineHandler(BaseHTTPRequestHandler):
             self._handle_rescue()
         elif path == "/notes":
             self._handle_notes()
+        elif path == "/sections":
+            self._handle_sections()
         else:
             self._error(404, "NOT_FOUND", "未知路径")
 
@@ -222,6 +231,30 @@ class EngineHandler(BaseHTTPRequestHandler):
 
         payload = {"sessionId": request["sessionId"], "resultMode": mode, "markdown": markdown}
         self._log("/notes", started, 200, mode, "segs=%d %s" % (len(request["segments"]), note))
+        headers = {"X-AI-Engine": "python"}
+        if _is_mock():
+            headers["X-AI-Mock"] = "1"
+        self._send(200, payload, headers)
+
+    def _handle_sections(self) -> None:
+        """按知识点分节，供前端勾选进笔记本。规则版，resultMode 固定 extract。"""
+        started = time.monotonic()
+        try:
+            request = validate.parse_notes(self._read_json())
+        except validate.BadRequest as exc:
+            self._log("/sections", started, exc.status, "", exc.code)
+            self._error(exc.status, exc.code, exc.message)
+            return
+
+        try:
+            items = sections.build_sections(request["sessionId"], request["segments"])
+        except Exception as exc:
+            self._log("/sections", started, 502, "", "section_failed")
+            self._error(502, "AI_UNAVAILABLE", "笔记分节失败：%s" % exc.__class__.__name__)
+            return
+
+        payload = {"sessionId": request["sessionId"], "resultMode": "extract", "sections": items}
+        self._log("/sections", started, 200, "extract", "sections=%d" % len(items))
         headers = {"X-AI-Engine": "python"}
         if _is_mock():
             headers["X-AI-Mock"] = "1"

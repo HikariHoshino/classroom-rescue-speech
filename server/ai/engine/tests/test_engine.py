@@ -13,11 +13,14 @@ from http.client import HTTPConnection
 from pathlib import Path
 
 ENGINE_DIR = Path(__file__).resolve().parents[1]
-if str(ENGINE_DIR) not in sys.path:
-    sys.path.insert(0, str(ENGINE_DIR))
+AI_DIR = ENGINE_DIR.parent
+for _path in (str(ENGINE_DIR), str(AI_DIR)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 import extract  # noqa: E402
 import keywords  # noqa: E402
+import sections  # noqa: E402
 import server  # noqa: E402
 import validate  # noqa: E402
 
@@ -149,6 +152,43 @@ class ExtractTest(unittest.TestCase):
         self.assertIn("## 作业与任务", markdown)
 
 
+class SectionsTest(unittest.TestCase):
+    def _segments(self):
+        segments = validate.parse_rescue(SAMPLE_REQUEST)["segments"]
+        segments.append(
+            {
+                "id": "seg-05",
+                "startMs": 130000,
+                "endMs": 140000,
+                "text": "接下来看二叉树的中序遍历，以及完全二叉树的存储方式。",
+            }
+        )
+        return segments
+
+    def test_sections_group_by_knowledge_point(self):
+        items = sections.build_sections("class-001", self._segments())
+        self.assertTrue(items)
+        titles = [item["title"] for item in items]
+        self.assertIn("栈", titles)
+        self.assertIn("树与二叉树", titles)
+        for item in items:
+            self.assertTrue(item["id"].startswith("sec-"))
+
+    def test_section_carries_stars_and_basis(self):
+        items = sections.build_sections("class-001", self._segments())
+        stack = next(item for item in items if item["title"] == "栈")
+        self.assertIn(stack["examStars"], (1, 2, 3))
+        self.assertIn("408", stack["examBasis"])
+        self.assertTrue(stack["segmentIds"])
+
+    def test_unmatched_text_gets_other_section(self):
+        items = sections.build_sections(
+            "class-001", [{"id": "s1", "startMs": 0, "endMs": 1000, "text": "今天先点个名，然后我们继续上课。"}]
+        )
+        self.assertEqual(items[0]["title"], "其他内容")
+        self.assertEqual(items[0]["examStars"], 0)
+
+
 class HttpContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -210,6 +250,23 @@ class HttpContractTest(unittest.TestCase):
     def test_unknown_route_404(self):
         status, data = self._post("/nope", {})
         self.assertEqual(status, 404)
+
+    def test_sections_shape(self):
+        status, data = self._post(
+            "/sections", {"sessionId": "class-001", "segments": SAMPLE_SEGMENTS}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(data["sessionId"], "class-001")
+        self.assertTrue(data["sections"])
+        first = data["sections"][0]
+        for key in ("id", "title", "points", "startMs", "segmentIds", "examStars", "examBasis"):
+            self.assertIn(key, first)
+
+    def test_weights_summary(self):
+        status, data = self._get("/weights")
+        self.assertEqual(status, 200)
+        self.assertTrue(data["points"])
+        self.assertIn("paperCount", data["meta"])
 
 
 if __name__ == "__main__":
