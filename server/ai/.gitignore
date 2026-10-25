@@ -1,0 +1,3 @@
+# Python 缓存（仓库根 .gitignore 由 1号 维护，这里只管 server/ai 下的 Python 产物）
+__pycache__/
+*.py[cod]
