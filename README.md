@@ -1,11 +1,12 @@
 # 走神急救按钮
 
 课堂回溯工具：实时/演示转写、走神急救回溯、考点雷达、课后笔记。
-依据《走神急救按钮_开发对齐说明》V1.0 搭建，当前为**可启动公共骨架**。
+依据《走神急救按钮_开发对齐说明》V1.0 搭建。
 
 ## 环境
 
-- Node.js **v24.21.0**（已实际验证），npm 11.19.0；全组统一使用该大版本
+- Node.js **v24.21.0**（本项目实际验证），npm 11.19.0；全组统一使用该大版本
+- 2号语音模块作者在 v22.18.0 上验证过同一套测试，v22/v24 均可
 - 包管理器统一 npm，锁文件为根目录 `package-lock.json`
 
 ## 启动
@@ -19,10 +20,28 @@ npm run dev                 # 同时启动前端(5173)与后端(3001)
 - 前端 http://localhost:5173 ，后端 http://localhost:3001
 - Vite 代理：`/api` → 后端 HTTP，`/ws` → 后端 WebSocket（已启用 ws 代理）
 
+### ASR 联调（可选）
+
+没有火山引擎密钥时，用本地模拟服务验证 `/ws/asr` 通道（不做真实识别）：
+
+```bash
+npx tsx server/asr/tools/mock-volc.ts          # 监听 ws://localhost:3101
+# .env 中设置 ASR_WS_URL=ws://localhost:3101 与 ASR_API_KEY=任意值
+npm run dev
+```
+
+用真实录音重新生成演示时间轴：
+
+```bash
+npx tsx server/asr/tools/transcribe-file.ts public/demo/lecture.wav
+# 确认结果后再加 --write 覆盖 src/speech/demo-data.ts
+```
+
 ## 检查
 
 ```bash
-npm run check   # 前后端类型检查（tsc client + server）
+npm run check   # 前后端 + 测试文件类型检查
+npm run test    # 语音模块与 ASR 路由的 8 项回归/集成测试
 npm run build   # 前端构建检查（tsc client + vite build）
 ```
 
@@ -46,7 +65,11 @@ npm run build   # 前端构建检查（tsc client + vite build）
 
 ## 当前完成口径（重要）
 
-- 演示模式播放的是 `src/speech/demo-data.ts` 中**手工编写的示例数据**，**不是真实 ASR 结果**
-- 实时模式（live）**尚未接入**，点击开始会明确提示"实时语音尚未接入"
-- `/api/rescue` 与 `/api/notes` 当前返回 `resultMode: "extract"` 的**原文整理占位结果**，**未调用真实模型**
-- 公共类型、状态机、回溯窗口截取、考点检测、组件连接已可用
+- **语音（2号）已接入**：`src/speech/` 与 `server/asr/` 为 2号交付模块，含麦克风 16k PCM 采集、
+  `/ws/asr` 转发、火山引擎流式识别适配、演示音频回放与文本兜底；8 项测试在本项目通过
+- **演示模式**播放 `public/demo/lecture.wav`（占位 TTS 录音），字幕来自 `src/speech/demo-data.ts`
+  预置时间轴；音频加载失败时自动降级为纯文本回放，并在状态提示中标明来源
+- **实时模式**需在 `.env` 配置 `ASR_API_KEY`（及可选的 `ASR_APP_ID`）；未配置时开始会明确报错
+  "后端未配置识别服务密钥"，不会伪装成正常记录
+- 真实识别准确率、真实麦克风浏览器测试、5号最终录音 **尚未验证**
+- `/api/rescue` 与 `/api/notes` 仍返回 `resultMode: "extract"` 的**原文整理占位结果**，**未调用真实模型**

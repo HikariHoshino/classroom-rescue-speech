@@ -14,5 +14,6 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["vite/client"]
   },
-  "include": ["src", "shared", "vite.config.ts"]
+  "include": ["src", "shared", "vite.config.ts"],
+  "exclude": ["**/*.test.ts"]
 }

@@ -1,78 +1,87 @@
-// 语音模块入口（唯一责任人：2号）
-// 固定导出 startSpeech / stopSpeech，契约见 shared/types.ts 注释与 docs/interfaces.md。
-// 当前状态：
-//   - demo 模式：播放 src/speech/demo-data.ts 的【示例数据】（非真实 ASR）；
-//   - live 模式：尚未接入真实 ASR，直接上报 error 状态，不伪装成可用。
-import type { InputMode, Segment, SpeechEvent } from "../../shared/types";
-import { DEMO_SAMPLES, DEMO_TOTAL_MS } from "./demo-data";
+// 语音模块对外入口（契约见《开发对齐说明》第五节）。
+// - onSegment 只发送已确认片段；同一 id 可能再次发送（修正），调用方按 id 覆盖。
+// - startSpeech 不抛异常：开始失败通过 onStatus({status:"error"}) 报告，并已释放资源。
+// - stopSpeech 可重复调用；最多等待最终转写 5 秒，未等到时 stopped 事件附带提示。
+// - 旧会话被停止后，其回调不会再写入任何数据。
+import type { InputMode, Segment, SpeechEvent, SpeechStatus } from "../../shared/types";
+import { startDemo } from "./demo";
+import { startLive } from "./live";
+import type { Runner, RunnerContext } from "./runner";
 
 export interface StartSpeechOptions {
   sessionId: string;
   mode: InputMode;
-  /** 只发送已确认片段；相同 id 由调用方覆盖更新 */
   onSegment: (sessionId: string, item: Segment) => void;
   onStatus: (event: SpeechEvent) => void;
 }
 
-let activeTimers: ReturnType<typeof setTimeout>[] = [];
-let activeSessionId: string | null = null;
-
-function clearTimers(): void {
-  for (const t of activeTimers) clearTimeout(t);
-  activeTimers = [];
+interface Session {
+  id: string;
+  alive: boolean;
+  runner?: Runner;
+  starting?: Promise<Runner>;
+  closing?: Promise<void>;
+  report(status: SpeechStatus, message?: string): void;
 }
 
-/**
- * 开始语音输入。
- * - demo：按时间轴回放示例片段（示例数据，非真实识别）；
- * - live：TODO(2号) 采集麦克风，经 /ws/asr 交由后端转发 ASR 服务。
- */
+let current: Session | null = null;
+
+function shutdown(s: Session, kind: "stop" | "error" | "finish", message?: string): Promise<void> {
+  s.closing ??= (async () => {
+    if (kind === "stop") s.report("stopping");
+    const runner = s.runner ?? (await s.starting?.catch(() => undefined));
+    const complete = runner ? await runner.stop().catch(() => false) : true;
+    s.alive = false;
+    if (current === s) current = null;
+    if (kind === "error") s.report("error", message);
+    else s.report("stopped", message ?? (complete ? undefined : "停止时未等到最终转写，文字可能不完整"));
+  })();
+  return s.closing;
+}
+
 export async function startSpeech(options: StartSpeechOptions): Promise<void> {
-  const { sessionId, mode, onSegment, onStatus } = options;
+  while (current) {
+    if (current.id === options.sessionId && !current.closing) return; // 重复点击开始
+    await stopSpeech();
+  }
 
-  // 重复开始时先停掉旧会话，保证幂等
-  await stopSpeech();
-  activeSessionId = sessionId;
-  onStatus({ sessionId, status: "starting" });
+  let finalSent = false;
+  const s: Session = {
+    id: options.sessionId,
+    alive: true,
+    report(status, message) {
+      if (finalSent) return;
+      if (status === "stopped" || status === "error") finalSent = true;
+      options.onStatus({ sessionId: options.sessionId, status, ...(message ? { message } : {}) });
+    },
+  };
+  current = s;
 
-  if (mode === "live") {
-    // TODO(2号)：实时 ASR 尚未接入。开始失败须释放已取得的麦克风资源。
-    activeSessionId = null;
-    onStatus({
-      sessionId,
-      status: "error",
-      message: "实时语音尚未接入（2号开发中），请改用演示模式",
-    });
+  const ctx: RunnerContext = {
+    emit(seg) {
+      if (s.alive) options.onSegment(options.sessionId, { ...seg });
+    },
+    fail(message) {
+      void shutdown(s, "error", message);
+    },
+    finish(message) {
+      void shutdown(s, "finish", message);
+    },
+  };
+
+  s.report("starting");
+  s.starting = options.mode === "live" ? startLive(ctx) : startDemo(ctx);
+  try {
+    s.runner = await s.starting;
+  } catch (e) {
+    s.alive = false;
+    if (current === s) current = null;
+    if (!s.closing) s.report("error", (e as Error)?.message || "启动转写失败");
     return;
   }
-
-  // demo 模式：回放示例数据
-  onStatus({ sessionId, status: "recording", message: "示例回放中（非真实 ASR）" });
-  for (const sample of DEMO_SAMPLES) {
-    const timer = setTimeout(() => {
-      if (activeSessionId !== sessionId) return;
-      onSegment(sessionId, { ...sample.segment });
-    }, sample.emitAtMs);
-    activeTimers.push(timer);
-  }
-  // 回放结束后保持 recording，等待用户手动停止
-  const endTimer = setTimeout(() => {
-    if (activeSessionId !== sessionId) return;
-    onStatus({
-      sessionId,
-      status: "recording",
-      message: "示例回放已播完，可手动停止",
-    });
-  }, DEMO_TOTAL_MS);
-  activeTimers.push(endTimer);
+  if (!s.closing) s.report("recording", s.runner.notice);
 }
 
-/** 停止语音输入。可重复调用且安全返回。 */
 export async function stopSpeech(): Promise<void> {
-  const sessionId = activeSessionId;
-  clearTimers();
-  activeSessionId = null;
-  // TODO(2号)：实时模式需释放麦克风轨道、WebSocket 连接与定时器，
-  // 并等待最终结果（最多 5 秒）后再由上层置为 stopped。
-  void sessionId;
+  if (current) await shutdown(current, "stop");
 }

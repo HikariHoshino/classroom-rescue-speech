@@ -6,6 +6,13 @@ import { registerAsrRoutes } from "./asr/index.js";
 import { registerAiRoutes } from "./ai/index.js";
 import type { ApiError } from "../shared/types.js";
 
+// 读取 .env（密钥只留在后端）。没有 .env 时使用已有环境变量。
+try {
+  process.loadEnvFile();
+} catch {
+  /* 无 .env 文件属正常情况 */
+}
+
 const PORT = 3001;
 
 const app = express();
@@ -16,9 +23,9 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-// 2号：ASR 语音路由注册（含 /ws/asr WebSocket）
+// 2号：ASR 语音路由注册（/ws/asr WebSocket）
 const httpServer = createServer(app);
-registerAsrRoutes(app, httpServer);
+registerAsrRoutes(httpServer);
 
 // 3号：AI 路由注册（/api/rescue、/api/notes）
 registerAiRoutes(app);

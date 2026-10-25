@@ -1,21 +1,89 @@
-// ASR 语音路由（唯一责任人：2号）
-// 本文件当前为空壳：只提供注册函数与状态占位，未接入真实 ASR 服务。
-// 2号在此实现：/ws/asr WebSocket 音频转发、服务商鉴权（密钥仅读 process.env）、
-// 结果标准化为 Segment 后经回调交给前端。
-import type { Express } from "express";
-import type { Server as HttpServer } from "node:http";
+// 语音路由：浏览器 ⇄ /ws/asr ⇄ 火山流式 ASR。密钥只在这里读取，不下发前端。
+//
+// 内部消息协议（仅 src/speech 使用）：
+//   浏览器 → 后端：二进制 = 16kHz/16bit/单声道 PCM；文本 {"type":"end"} = 音频结束
+//   后端 → 浏览器：{"type":"ready"} | {"type":"segment","segment":Segment}
+//                  | {"type":"done"} | {"type":"error","message":string}
+import type { Server } from "node:http";
+import { WebSocketServer, type WebSocket } from "ws";
+import { SegmentCollector } from "./segments";
+import { VolcAsrStream, describeAsrError, describeConnectError, readAsrConfig } from "./volc";
 
-/**
- * 注册 ASR 相关路由与 WebSocket。
- * @param app    Express 应用实例（挂载 /api 下的 HTTP 路由）
- * @param server HTTP 服务器实例（用于挂载 /ws/asr WebSocket）
- */
-export function registerAsrRoutes(app: Express, _server: HttpServer): void {
-  // TODO(2号)：在此挂载 WebSocket /ws/asr，内部消息协议自行封装。
-  app.get("/api/asr/status", (_req, res) => {
-    res.json({
-      ok: false,
-      message: "实时 ASR 尚未接入（2号开发中），当前为骨架占位",
-    });
+export const ASR_WS_PATH = "/ws/asr";
+
+/** 由 1 号在 server/index.ts 调用：registerAsrRoutes(httpServer) */
+export function registerAsrRoutes(server: Server): void {
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 1 << 20 });
+  server.on("upgrade", (req, socket, head) => {
+    const path = new URL(req.url ?? "/", "http://localhost").pathname;
+    if (path !== ASR_WS_PATH) return;
+    wss.handleUpgrade(req, socket, head, (ws) => handleClient(ws));
   });
+}
+
+function handleClient(client: WebSocket): void {
+  const send = (msg: object) => {
+    if (client.readyState === client.OPEN) client.send(JSON.stringify(msg));
+  };
+  const failClient = (message: string) => {
+    send({ type: "error", message });
+    client.close();
+  };
+
+  const config = readAsrConfig();
+  if (!config) {
+    failClient("后端未配置识别服务密钥（.env 中的 ASR_API_KEY）");
+    return;
+  }
+
+  const collector = new SegmentCollector();
+  let done = false;
+  const upstream = new VolcAsrStream(config, {
+    onResult(utterances, last) {
+      for (const segment of collector.update(utterances, last)) send({ type: "segment", segment });
+      if (last) {
+        done = true;
+        send({ type: "done" });
+        client.close();
+        upstream.close();
+      }
+    },
+    onError(code, detail) {
+      console.error(`[asr] 服务端错误 code=${code} logid=${upstream.logId} ${detail}`);
+      done = true;
+      failClient(describeAsrError(code));
+      upstream.close();
+    },
+    onClose() {
+      if (!done) failClient("识别服务连接中断");
+    },
+  });
+
+  client.on("message", (data: Buffer, isBinary) => {
+    if (isBinary) {
+      upstream.sendAudio(data);
+      return;
+    }
+    try {
+      if (JSON.parse(data.toString()).type === "end") upstream.finish();
+    } catch {
+      /* 忽略无法解析的文本消息 */
+    }
+  });
+  client.on("close", () => {
+    done = true;
+    upstream.close();
+  });
+
+  upstream.connect().then(
+    () => {
+      console.log(`[asr] 已连接识别服务 logid=${upstream.logId}`);
+      send({ type: "ready" });
+    },
+    (err) => {
+      console.error(`[asr] 连接识别服务失败: ${err.message}`);
+      done = true;
+      failClient(describeConnectError(err));
+    },
+  );
 }
