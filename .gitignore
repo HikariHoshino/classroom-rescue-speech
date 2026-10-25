@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+*.local
+.DS_Store
+Thumbs.db
+# 录音缓存
+recordings/
+*.tmp
