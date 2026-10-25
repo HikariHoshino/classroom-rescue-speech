@@ -1,0 +1,4 @@
+# Python 引擎的本地忽略项（仓库根的 .gitignore 由 1号 维护，这里只管本目录）
+__pycache__/
+*.py[cod]
+.venv/
