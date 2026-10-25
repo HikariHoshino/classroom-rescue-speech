@@ -24,8 +24,7 @@
 | `GET /api/health` | — | `{ "ok": true }`，仅表示后端存活 | server/index.ts |
 | `POST /api/rescue` | `RescueRequest` | `RescueResponse`；400 无有效文本/字段错误；502/504 整理失败/超时 | server/ai/index.ts（3号） |
 | `POST /api/notes` | `{ sessionId, segments }`（停止后的整节课快照） | `NotesResponse`，状态码同上 | server/ai/index.ts（3号） |
-| `GET /api/asr/status` | — | ASR 接入状态占位 | server/asr/index.ts（2号） |
-| `WS /ws/asr` | 2号自定义内部协议 | 浏览器音频上行 | server/asr/index.ts（2号） |
+| `WS /ws/asr` | 二进制 PCM（16k/16bit/单声道）+ `{"type":"end"}` | `ready` / `segment` / `done` / `error` | server/asr/index.ts（2号，已交付） |
 
 窗口与上下文由 1号在 App.tsx 截取：窗口 `max(0, capturedAtMs − 120000) ~ capturedAtMs`，
 `contextSegments` 为窗口前最多 30 秒。3号在服务端再次校验。
@@ -33,9 +32,12 @@
 ## 3. 后端注册函数（由 server/index.ts 挂载）
 
 ```ts
-// 2号：server/asr/index.ts
-registerAsrRoutes(app: Express, server: http.Server): void
-// 在内部挂载 /ws/asr WebSocket 与所需 /api 路由
+// 2号：server/asr/index.ts（已交付，签名以此为准）
+registerAsrRoutes(server: http.Server): void
+// 内部用 WebSocketServer({ noServer: true }) 监听 upgrade，仅处理 /ws/asr
+// 内部消息协议：浏览器→后端 二进制=PCM，文本 {"type":"end"}；
+//              后端→浏览器 {"type":"ready"} / {"segment",segment} / {"type":"done"} / {"type":"error",message}
+// 密钥只在此读取 process.env（ASR_APP_ID / ASR_API_KEY / ASR_RESOURCE_ID / ASR_WS_URL）
 
 // 3号：server/ai/index.ts
 registerAiRoutes(app: Express): void
