@@ -1,20 +1,15 @@
-// 急救面板（唯一责任人：4号）
-// 红色主按钮 + 最近2分钟回溯结果展示。按钮操作通过回调交给 App.tsx。
+// 急救面板（唯一责任人：4号；设计移植自 ljx 分支，props 由 1号固定）
+// 红色主按钮回溯最近 2 分钟；三项结果、时间范围、错误与重试。
 import type { RescueResult } from "../../shared/types";
 import { formatMs } from "./TopBar";
+import { Icon } from "./Icon";
 
 export interface RescuePanelProps {
-  /** 是否可点击（recording/stopped 且有文本；无文本时禁用） */
   canRescue: boolean;
-  /** 独立加载状态：请求中禁止重复点击 */
   loading: boolean;
-  /** 最近一次回溯结果（null 表示尚未请求） */
   result: RescueResult | null;
-  /** "ai" | "extract"，extract 时必须明确显示“原文整理” */
   resultMode: "ai" | "extract" | null;
-  /** 错误提示（可重试） */
   error: string | null;
-  /** 本次实际回溯窗口（毫秒），用于展示时间范围 */
   windowRange: { fromMs: number; toMs: number } | null;
   onRescue: () => void;
   onRetry: () => void;
@@ -23,38 +18,87 @@ export interface RescuePanelProps {
 export function RescuePanel(props: RescuePanelProps) {
   return (
     <section className="panel rescue-panel">
-      <h2>走神急救</h2>
-      <button
-        className="rescue-button"
-        onClick={props.onRescue}
-        disabled={!props.canRescue || props.loading}
-      >
-        {props.loading ? "正在回溯…" : "我走神了！"}
-      </button>
-      <p className="rescue-hint">回溯点击时最近 2 分钟的课堂内容</p>
-      {props.error && (
-        <div className="rescue-error">
-          <p>{props.error}</p>
-          <button onClick={props.onRetry}>重试</button>
+      <div className="panel-heading">
+        <div className="heading-label">
+          <Icon name="rewind" />
+          <h2>走神急救</h2>
+        </div>
+      </div>
+      <div className="physical-rescue">
+        <p className="rescue-prompt">刚才没听进去？</p>
+        <div
+          className={`rescue-base ${props.canRescue ? "available" : "unavailable"}`}
+        >
+          <button
+            className="rescue-button"
+            disabled={!props.canRescue || props.loading}
+            aria-label="我刚走神了"
+            onClick={props.onRescue}
+          >
+            <span>{props.loading ? "正在" : "我刚"}</span>
+            <span>{props.loading ? "回溯…" : "走神了"}</span>
+          </button>
+        </div>
+        <p className="rescue-helper">
+          {props.canRescue
+            ? "按一下，回溯最近 2 分钟的课堂内容"
+            : "开始听课后即可回溯"}
+        </p>
+      </div>
+
+      {props.loading && (
+        <div className="request-loading" role="status">
+          <span className="spinner" />
+          <h3>正在帮你接上课堂……</h3>
+          <p>只整理点击那一刻的快照，课堂仍在继续。</p>
         </div>
       )}
-      {props.result && (
+
+      {props.error && !props.loading && (
+        <div className="request-error" role="alert">
+          <Icon name="info" size={23} />
+          <h3>这次没能整理好</h3>
+          <p>{props.error}</p>
+          <button className="button red" onClick={props.onRetry}>
+            重试本次回溯
+          </button>
+        </div>
+      )}
+
+      {props.result && !props.loading && (
         <div className="rescue-result">
-          {props.resultMode === "extract" && (
-            <p className="badge badge-extract">原文整理（未使用 AI）</p>
-          )}
-          {props.windowRange && (
-            <p className="rescue-window">
-              回溯范围：{formatMs(props.windowRange.fromMs)} ~{" "}
-              {formatMs(props.windowRange.toMs)}
-            </p>
-          )}
-          <h3>刚才错过的内容</h3>
-          <p>{props.result.missed}</p>
-          <h3>当前主题</h3>
-          <p>{props.result.topic}</p>
-          <h3>最新进度</h3>
-          <p>{props.result.latest}</p>
+          <div className="result-meta">
+            {props.resultMode === "extract" && (
+              <span className="example-badge">原文整理（未使用 AI）</span>
+            )}
+            {props.windowRange && (
+              <span>
+                回溯范围 {formatMs(props.windowRange.fromMs)} —{" "}
+                {formatMs(props.windowRange.toMs)}
+              </span>
+            )}
+          </div>
+          <section className="result-block">
+            <span className="result-number">01</span>
+            <div>
+              <h3>你刚错过了什么</h3>
+              <p>{props.result.missed}</p>
+            </div>
+          </section>
+          <section className="result-block core-block">
+            <span className="result-number">02</span>
+            <div>
+              <h3>当前主题</h3>
+              <p>{props.result.topic}</p>
+            </div>
+          </section>
+          <section className="result-block">
+            <span className="result-number">03</span>
+            <div>
+              <h3>截至点击时，老师讲到哪里</h3>
+              <p>{props.result.latest}</p>
+            </div>
+          </section>
         </div>
       )}
     </section>
