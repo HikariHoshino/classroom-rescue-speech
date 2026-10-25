@@ -11,7 +11,7 @@ complete classroom rescue application or the inaccessible Gitee repository.
 - `server/asr/`: ASR WebSocket route, Volcengine adapter, segment normalization,
   local mock server, and recording transcription CLI.
 - `public/demo/lecture.wav`: approximately 104 seconds of placeholder TTS audio.
-- `src/speech/session.test.ts` and `server/asr/asr.test.ts`: eight regression and
+- `src/speech/session.test.ts` and `server/asr/asr.test.ts`: nine regression and
   local integration tests.
 
 Public application files and the temporary development harness are intentionally
@@ -64,14 +64,21 @@ npx tsx server/asr/tools/transcribe-file.ts public/demo/lecture.wav
 
 Use `--write` only after backing up the current demo timeline and confirming the
 ASR endpoint and recording. Mock output is not a substitute for a real timeline.
+The CLI waits at most five seconds for a final result after sending the terminal
+audio packet; use `--final-timeout <ms>` to change that wait. A timeout exits with
+an error and does not overwrite the existing timeline.
 
 ## Verification And Remaining Acceptance
 
-Local verification uses Node v22.18.0. The eight tests cover confirmed/corrected
+Local verification uses Node v22.18.0. The nine tests cover confirmed/corrected
 segments, terminal results, authentication configuration and headers, PCM frames,
 WebSocket shutdown, the actual WAV through a mock ASR, and concurrent starts with
 old-session cleanup. The session regression fails on the original logic and passes
 after the one-line `if (current)` to `while (current)` fix.
+The final-result timeout regression also fails on the original CLI and passes
+after the bounded-wait fix. Nine additional checks passed in the installed Chrome
+browser, including actual AudioWorklet processing with a synthetic microphone.
+See [VERIFICATION.md](VERIFICATION.md) for results and remaining acceptance.
 
 These tests do not establish real Volcengine recognition accuracy. Real ASR
 credentials, a physical-microphone browser test, the team's final recording,

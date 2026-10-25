@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import path from "node:path";
 import test from "node:test";
 import { gunzipSync, gzipSync } from "node:zlib";
 import WebSocket, { WebSocketServer } from "ws";
@@ -213,5 +215,55 @@ test("the transcription CLI reads the supplied WAV and waits for its terminal re
     if (child.exitCode === null) child.kill();
     for (const ws of mock.clients) ws.terminate();
     await new Promise<void>((resolve) => mock.close(() => resolve()));
+  }
+});
+
+test("the transcription CLI fails instead of hanging when the final result never arrives", { timeout: 8000 }, async () => {
+  const timelineBefore = readFileSync("src/speech/demo-data.ts");
+  const temp = mkdtempSync(path.join(process.cwd(), ".speech-test-"));
+  const file = path.join(temp, "short.wav");
+  const wav = Buffer.alloc(44 + 3200);
+  wav.write("RIFF");
+  wav.writeUInt32LE(wav.length - 8, 4);
+  wav.write("WAVEfmt ", 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(16000, 24);
+  wav.writeUInt32LE(32000, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36);
+  wav.writeUInt32LE(3200, 40);
+  writeFileSync(file, wav);
+  const mock = new WebSocketServer({ port: 0, host: "127.0.0.1" });
+  await once(mock, "listening");
+  let sawEnd = false;
+  mock.on("connection", (ws) => ws.on("message", (data: Buffer) => {
+    if (data[1] >> 4 === 2 && data[1] & 2) sawEnd = true;
+  }));
+  const child = spawn(process.execPath, [
+    "--import", "tsx", "server/asr/tools/transcribe-file.ts", file,
+    "--interval", "0", "--final-timeout", "100", "--write",
+  ], {
+    cwd: process.cwd(),
+    env: { ...process.env, ASR_API_KEY: "local-test", ASR_WS_URL: `ws://127.0.0.1:${(mock.address() as AddressInfo).port}` },
+    windowsHide: true,
+  });
+  let stderr = "";
+  child.stderr!.on("data", (data) => { stderr += data; });
+  const watchdog = setTimeout(() => child.kill(), 4000);
+  try {
+    const [code] = await once(child, "close");
+    assert.equal(sawEnd, true, "the test must reach the terminal packet before simulating a silent service");
+    assert.equal(code, 1, "a missing final result must fail explicitly without relying on an external kill");
+    assert.match(stderr, /最终识别结果超时/);
+    assert.deepEqual(readFileSync("src/speech/demo-data.ts"), timelineBefore, "failed recognition must not overwrite the working demo timeline");
+  } finally {
+    clearTimeout(watchdog);
+    if (child.exitCode === null) child.kill();
+    for (const ws of mock.clients) ws.terminate();
+    await new Promise<void>((resolve) => mock.close(() => resolve()));
+    rmSync(temp, { recursive: true });
   }
 });

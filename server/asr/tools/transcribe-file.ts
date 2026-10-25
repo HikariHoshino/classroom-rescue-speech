@@ -7,6 +7,7 @@
 //   --write          生成 src/speech/demo-data.ts（覆盖）
 //   --url <路径>     写入 demo-data.ts 的音频地址，默认按 public/ 下的相对路径推断
 //   --interval <ms>  每 200ms 音频包的发送间隔，默认 100（2 倍速）；200 为实时
+//   --final-timeout <ms>  结束包发出后等待最终结果的时长，默认 5000
 // wav 直接读取；其他格式需要本机有 ffmpeg。
 import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -82,7 +83,7 @@ function loadPcm(file: string): Buffer {
   return r.stdout;
 }
 
-function transcribe(pcm: Buffer, intervalMs: number): Promise<Segment[]> {
+function transcribe(pcm: Buffer, intervalMs: number, finalTimeoutMs: number): Promise<Segment[]> {
   const config = readAsrConfig();
   if (!config) throw new Error(".env 中缺少 ASR_API_KEY");
   const collector = new SegmentCollector();
@@ -90,25 +91,33 @@ function transcribe(pcm: Buffer, intervalMs: number): Promise<Segment[]> {
 
   return new Promise((resolve, reject) => {
     let finished = false;
+    let finalTimer: ReturnType<typeof setTimeout> | undefined;
+    const fail = (error: Error) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(finalTimer);
+      stream.close();
+      reject(error);
+    };
     const stream = new VolcAsrStream(config, {
       onResult(utterances, last) {
+        if (finished) return;
         for (const seg of collector.update(utterances, last)) {
           result.set(seg.id, seg);
           console.log(`[${(seg.startMs / 1000).toFixed(1)}s-${(seg.endMs / 1000).toFixed(1)}s] ${seg.text}`);
         }
         if (last) {
           finished = true;
+          clearTimeout(finalTimer);
           stream.close();
           resolve([...result.values()].sort((a, b) => a.startMs - b.startMs));
         }
       },
       onError(code, detail) {
-        finished = true;
-        stream.close();
-        reject(new Error(`${describeAsrError(code)}：${detail}`));
+        fail(new Error(`${describeAsrError(code)}：${detail}`));
       },
       onClose() {
-        if (!finished) reject(new Error("识别服务连接中断"));
+        fail(new Error("识别服务连接中断"));
       },
     });
 
@@ -120,10 +129,12 @@ function transcribe(pcm: Buffer, intervalMs: number): Promise<Segment[]> {
           stream.sendAudio(pcm.subarray(off, off + CHUNK_BYTES));
           await new Promise((r) => setTimeout(r, intervalMs));
         }
+        if (finished) return;
+        finalTimer = setTimeout(() => fail(new Error("等待最终识别结果超时，未生成演示时间轴")), finalTimeoutMs);
         stream.finish();
       },
-      (err) => reject(new Error(`${describeConnectError(err)}（${err.message}）`)),
-    );
+      (err) => fail(new Error(`${describeConnectError(err)}（${err.message}）`)),
+    ).catch(fail);
   });
 }
 
@@ -150,7 +161,7 @@ ${items}
 async function main() {
   const file = process.argv[2];
   if (!file || file.startsWith("--")) {
-    console.log("用法：npx tsx server/asr/tools/transcribe-file.ts <音频文件> [--write] [--url /demo/xxx] [--interval 100]");
+    console.log("用法：npx tsx server/asr/tools/transcribe-file.ts <音频文件> [--write] [--url /demo/xxx] [--interval 100] [--final-timeout 5000]");
     process.exit(1);
   }
   try {
@@ -159,8 +170,12 @@ async function main() {
     /* 没有 .env 时使用已有环境变量 */
   }
 
+  const intervalMs = Number(arg("--interval") ?? 100);
+  const finalTimeoutMs = Number(arg("--final-timeout") ?? 5000);
+  if (!Number.isFinite(intervalMs) || intervalMs < 0) throw new Error("--interval 必须为非负毫秒数");
+  if (!Number.isFinite(finalTimeoutMs) || finalTimeoutMs <= 0) throw new Error("--final-timeout 必须为正毫秒数");
   const pcm = loadPcm(file);
-  const segments = await transcribe(pcm, Number(arg("--interval") ?? 100));
+  const segments = await transcribe(pcm, intervalMs, finalTimeoutMs);
   console.log(`\n识别完成：${segments.length} 个片段`);
 
   if (process.argv.includes("--write")) {
